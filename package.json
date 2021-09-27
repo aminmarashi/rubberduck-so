@@ -1,10 +1,11 @@
 {
   "name": "rubberduck-so",
-  "version": "1.0.0",
+  "version": "1.0.5",
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "prepublishOnly": "npm run build",
+    "build": "tsc"
   },
   "repository": {
     "type": "git",
@@ -15,5 +16,8 @@
   "bugs": {
     "url": "https://github.com/aminmarashi/rubberduck-so/issues"
   },
-  "homepage": "https://github.com/aminmarashi/rubberduck-so#readme"
+  "homepage": "https://github.com/aminmarashi/rubberduck-so#readme",
+  "devDependencies": {
+    "typescript": "^4.4.3"
+  }
 }
