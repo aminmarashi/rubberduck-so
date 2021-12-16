@@ -1,7 +1,13 @@
-export class RunkitInjection {
-  private notebooks: any[] = [];
+import { FakeNotebook } from "./FakeNotebook";
+import { NotebookContainer } from "./types";
 
-  inject() {
+export class RunkitInjection {
+  constructor(
+    private notebookContainers: { [key: string] : NotebookContainer } = {},
+    private resolvedCodes: { [key: string]: Set<string> } = {},
+  ) {}
+
+  public inject() {
     if (!(window as any).RunKit) {
       const runkit = document.createElement('script');
       runkit.src = 'https://embed.runkit.com';
@@ -11,46 +17,76 @@ export class RunkitInjection {
       this.convertElements();
     }
   }
-  convertElements() {
-    if (this.notebooks.length) return;
-
-    const RunKit = (window as any).RunKit;
+  private get notebookNames() {
+    return Object.keys(this.notebookContainers);
+  }
+  private convertElements() {
+    if (this.notebookNames.length) return;
 
     const elements: HTMLElement[] = Array.from(document.querySelectorAll('.embed'));
 
-    this.notebooks = elements.reduce<any[]>((notebooks, element) => {
-      const childNodes = Array.from(element.childNodes);
-      const source = element.innerText;
-      if (!source) return notebooks;
-      const notebook = element.getAttribute('hidden') ?
-        new FakeNotebook(element.innerText) :
-        RunKit.createNotebook({
-          element,
-          source,
-          onLoad: () => childNodes.forEach(child => child.remove()),
-          onEvaluate: () => this.updateSources(),
-        });
-      return [...notebooks, notebook];
-    }, []);
+    this.notebookContainers = elements.reduce((notebookContainers, element) => {
+      const notebookName = element.getAttribute('name') || Object.keys(notebookContainers).length;
+      const dependsOn = element.getAttribute('depends-on')?.split(',') || [];
+      const notebook = this.createNotebook(element);
+      if (!notebook) return notebookContainers;
+      return {...notebookContainers, [notebookName]: { name: notebookName, notebook, dependsOn }};
+    }, {});
 
     this.updateSources();
   }
-  async updateSources() {
-    const codes = [];
-    for (const notebook of this.notebooks) {
-      const code = await notebook.getSource();
-      await notebook.setPreamble(codes.reduce((acc, c) => `${acc}; ${c}`, ''));
-      codes.push(code);
+  private createNotebook(element?: HTMLElement) {
+    const RunKit = (window as any).RunKit;
+    if (!RunKit) throw new Error('Runkit is not defined or is not globally available');
+
+    if (!element) return undefined;
+    const childNodes = Array.from(element.childNodes);
+    const source = element.innerText;
+    if (!source) return undefined;
+
+    return element.getAttribute('hidden') ?
+      new FakeNotebook(element.innerText) :
+      RunKit.createNotebook({
+        element,
+        source,
+        onLoad: () => childNodes.forEach(child => child.remove()),
+        onEvaluate: () => this.updateSources(),
+      });
+  }
+  private async updateSources() {
+    this.detectCircularDependency();
+    /* List of dependencies must always come in order in the notebookNames */
+    for (const notebookName of this.notebookNames) {
+      const notebookContainer = this.notebookContainers[notebookName];
+      await notebookContainer.notebook.setPreamble(await this.resolveCodeDependencies(notebookContainer));
     }
   }
-}
-
-class FakeNotebook {
-  constructor(private source: string) {}
-  async getSource() {
-    return this.source;
+  private async resolveDependencies(notebookContainer: NotebookContainer): Promise<Set<string>> {
+    const { notebook, dependsOn, name } = notebookContainer;
+    const resolved = await Promise.all(dependsOn.map(async (name: string) => {
+      const resolved = this.resolvedCodes[name];
+      if (resolved) return resolved;
+      return this.resolveDependencies(this.notebookContainers[name]);
+    }));
+    const dependencies = resolved.flatMap(r => Array.from(r));
+    this.resolvedCodes[name] = new Set([...dependencies, (await notebook.getSource())]);
+    return this.resolvedCodes[name];
   }
-  async setPreamble() {
-    // nothing to do here
+  public async resolveCodeDependencies(notebookContainer: NotebookContainer): Promise<string> {
+    const codes = Array.from(await this.resolveDependencies(notebookContainer));
+    codes.pop();
+    return codes.join('; ');
+  }
+  public detectCircularDependency() {
+    const tree: { [key: string]: string[] } = {};
+    for (const notebookName of this.notebookNames) {
+      const { dependsOn, name } = this.notebookContainers[notebookName];
+      for (const dependency of dependsOn) {
+        if ((tree[dependency] || []).includes(name)) {
+          throw new Error(`Circular dependency detected between ${name} and ${dependency}`);
+        }
+      }
+      tree[name] = dependsOn;
+    }
   }
 }
