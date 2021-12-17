@@ -1,1 +1,3 @@
-export { RunkitInjection } from "./runkit-injection/RunkitInjection";
+import { RunkitInjection } from './runkit-injection/RunkitInjection';
+
+(new RunkitInjection()).inject();;
