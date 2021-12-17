@@ -39,3 +39,8 @@ function sayHello() {
 sayHello();
 </pre>
 ```
+
+The end result (the hidden notebook is, well... hidden :) ):
+
+<img width="702" alt="Screenshot 2021-12-17 at 5 33 51 PM" src="https://user-images.githubusercontent.com/6560964/146577364-ff64d1f6-62da-47db-b118-cc86f09b9e98.png">
+
